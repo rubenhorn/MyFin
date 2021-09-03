@@ -1,0 +1,2 @@
+const API_KEY = ''; // TODO Your own API key
+const DEPLOYMENT_ID = ''; // TODO your Apps Script Deployment ID
