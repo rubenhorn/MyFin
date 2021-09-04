@@ -34,7 +34,7 @@ function doPost(request) {
   if(comment.length > 200) throw 'Invalid comment';
   const resource = {
     'majorDimension': 'ROWS',
-    'values': [[date, description, `${ amount }${ currencySymbol }`, category, comment]]
+    'values': [[date, description, `${ currencySymbol }${ amount }`, category, comment]]
   };
   const optionalArgs = {valueInputOption: 'USER_ENTERED'};
   const spreadsheetId = PropertiesService.getScriptProperties().getProperty('spreadsheetId');
