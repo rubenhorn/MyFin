@@ -1,5 +1,5 @@
 # MyFin
-A simple open source expenses tracking app using Google Drive, Apps Script and Flutter.
+A simple open source expenses tracking app using Google Drive, Apps Script, Flutter and Python.
 
 ## Setup
 1. Create a new empty Google Sheet
@@ -9,3 +9,4 @@ A simple open source expenses tracking app using Google Drive, Apps Script and F
 4. Run the `setup` function and grant the app access to your Google Sheets
 5. Create a new deployment and copy the Deployment ID
 6. Create `./flutter_app/lib/config.dart` based on `./flutter_app/lib/config.dart.template` using your API key and Deployment ID
+7. Create `./reporting/config.py` based on `./reporting/config.py.template` using your API key and Deployment ID

@@ -1,11 +1,11 @@
 import 'package:http/http.dart' as http;
 
-import 'config.dart';
+import 'config.dart' as config;
 
 Future<void> submitExpense(String date, String description, String amount,
     String category, String comment) async {
   final url = Uri.encodeFull(
-      'https://script.google.com/macros/s/$DEPLOYMENT_ID/exec?apiKey=$API_KEY&date=$date&description=$description&amount=$amount&category=$category&comment=$comment');
+      'https://script.google.com/macros/s/${config.DEPLOYMENT_ID}/exec?apiKey=${config.API_KEY}&date=$date&description=$description&amount=$amount&category=$category&comment=$comment');
 
   http.Request request = http.Request('Post', Uri.parse(url))
     ..followRedirects = true;
