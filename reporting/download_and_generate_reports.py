@@ -93,12 +93,12 @@ def export_report_csv(report: Report, filename):
             increase = calculate_and_format_increase(
                 report.previous_interval.sum, report.sum)
         csv_writer.writerow(
-            ['balance', reduce(lambda a, b: a+b, [c.expenses_count for c in report.categories.values()]), report.sum, increase])
+            ['balance', reduce(lambda a, b: a+b, [c.expenses_count for c in report.categories.values()]), '{:.2f}{}'.format(report.sum, currency_symbol), increase])
         rows_and_sum = []
         for category_name in report.categories.keys():
             category = report.categories[category_name]
-            row = [category_name, category.expenses_count, '{} ({:.2f}%)'.format(
-                category.sum, 100 * category.sum / report.sum), category.increase]
+            row = [category_name, category.expenses_count, '{:.2f}{} ({:.2f}%)'.format(
+                category.sum, currency_symbol, 100 * category.sum / report.sum), category.increase]
             rows_and_sum.append((row, category.sum))
         rows_and_sum.sort(key=lambda rs: rs[1] * -1)
         for row, _ in rows_and_sum:
