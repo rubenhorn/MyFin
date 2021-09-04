@@ -9,6 +9,8 @@ from pathlib import Path
 import csv
 import sys
 from functools import reduce
+import pandas as pd
+import numpy as np
 
 currency_symbol = '€'
 output_folder = Path(__file__).parent / 'reports'
@@ -26,7 +28,8 @@ class Expense:
 
 
 class Report:
-    def __init__(self, previous_interval) -> None:
+    def __init__(self, title: str, previous_interval=None) -> None:
+        self.title = title
         self.categories = dict()
         self.sum = 0
         self.previous_interval = previous_interval
@@ -84,23 +87,41 @@ def calculate_and_format_increase(old_value: float, new_value: float) -> str:
     return increase
 
 
+def export_report_html(report: Report, filename):
+    template = ''
+    with open(Path(__file__).parent / 'template.html', 'r', encoding='utf-8') as file:
+        template = file.read()
+    category_data = [[key, report.categories[key].sum]
+                     for key in report.categories]
+    categories_html = pd.read_csv(Path(filename).parent / 'report.csv').replace(np.nan, '', regex=True).to_html(index=False)
+    expenses_html = pd.read_csv(Path(filename).parent / 'data.csv').replace(np.nan, '', regex=True).to_html(index=False)
+    with open(filename, 'w', encoding='utf-8') as file:
+        file.write(
+            template
+                .replace('//replace_with_category_data', str(category_data)[1:-1])
+                .replace('<!--replace_with_title-->', f'Expenses {report.title}')
+                .replace('<!--replace_with_categories-->', categories_html)
+                .replace('<!--replace_with_expenses-->', expenses_html)
+        )
+
+
 def export_report_csv(report: Report, filename):
+    increase = None
+    if report.previous_interval is not None:
+        increase = calculate_and_format_increase(
+            report.previous_interval.sum, report.sum)
+    rows_and_sum = []
+    for category_name in report.categories.keys():
+        category = report.categories[category_name]
+        row = [category_name, category.expenses_count, '{:.2f}{} ({:.2f}%)'.format(
+            category.sum, currency_symbol, 100 * category.sum / report.sum), category.increase]
+        rows_and_sum.append((row, category.sum))
+    rows_and_sum.sort(key=lambda rs: rs[1] * -1)
     with open(filename, 'w', newline='', encoding='utf-8') as file:
         csv_writer = csv.writer(file)
         csv_writer.writerow(['Category', 'Expenses count', 'Sum', 'Increase'])
-        increase = None
-        if report.previous_interval is not None:
-            increase = calculate_and_format_increase(
-                report.previous_interval.sum, report.sum)
         csv_writer.writerow(
             ['balance', reduce(lambda a, b: a+b, [c.expenses_count for c in report.categories.values()]), '{:.2f}{}'.format(report.sum, currency_symbol), increase])
-        rows_and_sum = []
-        for category_name in report.categories.keys():
-            category = report.categories[category_name]
-            row = [category_name, category.expenses_count, '{:.2f}{} ({:.2f}%)'.format(
-                category.sum, currency_symbol, 100 * category.sum / report.sum), category.increase]
-            rows_and_sum.append((row, category.sum))
-        rows_and_sum.sort(key=lambda rs: rs[1] * -1)
         for row, _ in rows_and_sum:
             csv_writer.writerow(row)
 
@@ -115,8 +136,8 @@ def group_expenses_by_months(expenses: List[Expense]) -> Mapping[str, List[Expen
     return groups
 
 
-def generate_report(expenses: List[Expense], previous_interval: Report) -> Report:
-    report = Report(previous_interval)
+def generate_report(title: str, expenses: List[Expense], previous_interval: Report) -> Report:
+    report = Report(title, previous_interval)
     category_names = set([expense.category.lower() for expense in expenses])
     for category_name in category_names:
         category_expenses = [
@@ -131,6 +152,23 @@ def generate_report(expenses: List[Expense], previous_interval: Report) -> Repor
         category = Report.Category(expenses_count, expenses_sum, increase)
         report.add_category(category_name, category)
     return report
+
+
+def create_index_html(groups: Mapping[str, List[Expense]]):
+    html = '''<!DOCTYPE html>
+<html>
+    <head>
+        <link rel="stylesheet" href="https://unpkg.com/purecss@2.0.6/build/pure-min.css"
+            integrity="sha384-Uu6IeWbM+gzNVXJcM9XV3SohHtmWE+3VGi496jvgX1jyvDTXfdK+rfZc8C1Aehk5" crossorigin="anonymous">
+    </head>
+    <body style="padding: 10px">
+        <h1>Expenses Report</h1>
+        <ul><!--replace_with_li-->
+        </ul>
+    </body>
+</html>'''.replace('<!--replace_with_li-->', '\n'.join([f'<li><a href="./{key}/index.html">{key}</a></li>' for key in groups.keys()]))
+    with open(output_folder / 'index.html', 'w', encoding='utf-8') as file:
+        file.write(html)
 
 
 print('Downloading expenses...', end='')
@@ -159,9 +197,14 @@ for key in groups.keys():
     report_output_folder = output_folder / key
     report_output_folder.mkdir(exist_ok=True)
     export_expenses_csv(report_expenses, report_output_folder / 'data.csv')
-    report = generate_report(report_expenses, previous_interval)
+    report = generate_report(key, report_expenses, previous_interval)
     export_report_csv(report, report_output_folder / 'report.csv')
+    export_report_html(report, report_output_folder / 'index.html')
     previous_interval = report
     print('Done')
+print('Generating index...', end='')
+sys.stdout.flush()
+create_index_html(groups)
+print('Done')
 
 print('\nDone!')
