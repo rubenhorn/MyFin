@@ -56,7 +56,7 @@ def download_expenses() -> List[Expense]:
     def create_expense(arr):
         year, month, day = [int(v) for v in arr[0].split('-')]
         description = arr[1]
-        amount = float(arr[2].replace(currency_symbol, ''))
+        amount = float(arr[2].replace(',', '').replace(currency_symbol, ''))
         category = arr[3]
         comment = '' if len(arr) < 5 else arr[4]
         return Expense(year, month, day, description, amount, category, comment)
