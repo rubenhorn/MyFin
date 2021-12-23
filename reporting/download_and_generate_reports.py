@@ -144,7 +144,7 @@ def generate_report(title: str, expenses: List[Expense], previous_interval: Repo
             expense for expense in expenses if expense.category == category_name]
         expenses_count = len(category_expenses)
         expenses_sum = reduce(lambda a, b: a+b,
-                              [expense.amount for expense in category_expenses])
+                              [0] + [expense.amount for expense in category_expenses])
         increase = None
         if previous_interval is not None and category_name in previous_interval.categories:
             increase = calculate_and_format_increase(
