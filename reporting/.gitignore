@@ -1,8 +1,2 @@
 # Python
 **/__pycache__
-
-# App secrets
-config.py
-
-# Generated output files
-reports
