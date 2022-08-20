@@ -1,1 +1,0 @@
-python .\download_and_generate_reports.py && start .\reports\index.html

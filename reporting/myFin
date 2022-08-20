@@ -1,3 +1,0 @@
-#!/bin/sh
-cd "$(dirname "$0")"
-python3 download_and_generate_reports.py && firefox reports/index.html

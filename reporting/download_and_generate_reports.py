@@ -1,20 +1,27 @@
 #!/usr/bin/python3
 
-from os import name
+from io import StringIO
+from time import sleep
 from typing import List, Mapping, Optional
-import config
-import requests
-import json
 from pathlib import Path
+import requests
 import csv
 import sys
 from functools import reduce
 import pandas as pd
 import numpy as np
+import os
+import locale
 
+locale.setlocale(locale.LC_ALL, 'de_DE')
+
+if len(sys.argv) < 2:
+    print('Keine Google Sheets ID bei Start spezifizier!')
+    sheet_id = input('Bitte Google Sheets ID eingeben: ')
+else:
+    sheet_id = sys.argv[1]
 currency_symbol = '€'
-output_folder = Path(__file__).parent / 'reports'
-
+output_folder = Path(os.path.expanduser('~\Documents')) / 'Finanzen' / 'Ausgaben'
 
 class Expense:
     def __init__(self, year: int, month: int, day: int, description: str, amount: float, category: str, comment: str) -> None:
@@ -25,6 +32,9 @@ class Expense:
         self.amount = amount
         self.category = category
         self.comment = comment
+
+    def __repr__(self) -> str:
+        return f'{ self.description }{ "" if self.comment == "" else " - " + self.comment } ({ self.category }, { currency_symbol }{ self.amount }) on { self.year }-{ self.month }-{ self.day }'
 
 
 class Report:
@@ -50,17 +60,23 @@ class Report:
 
 
 def download_expenses() -> List[Expense]:
-    request = requests.get(
-        f'https://script.google.com/macros/s/{ config.DEPLOYMENT_ID }/exec?apiKey={ config.API_KEY }', allow_redirects=True)
-
+    response = requests.get(
+        f'https://docs.google.com/spreadsheets/d/{ sheet_id }/gviz/tq?tqx=out:csv', allow_redirects=True)
+    if response.status_code != 200:
+        print(f'\nFehler beim Download! (HTTP { response.status_code })', file=sys.stderr)
+        sleep(3)
+        sys.exit(1)
+    content = response.content.decode('utf-8')
+    file = StringIO(content)
+    reader = csv.reader(file, delimiter=',')
     def create_expense(arr):
-        year, month, day = [int(v) for v in arr[0].split('-')]
-        description = arr[1]
-        amount = float(arr[2].replace(',', '').replace(currency_symbol, ''))
-        category = arr[3]
-        comment = '' if len(arr) < 5 else arr[4]
+        day, month, year = [int(v) for v in arr[1].split('.')] # Parsing "dd.MM.yyyy hh:mm:ss"
+        description = arr[2]
+        amount = float(arr[3].replace('.','').replace(',', '.').replace(currency_symbol, ''))
+        category = arr[4]
+        comment = '' if len(arr) < 6 else arr[5]
         return Expense(year, month, day, description, amount, category, comment)
-    expenses = [create_expense(v) for v in json.loads(request.content)]
+    expenses = [create_expense(v) for v in list(reader)[1:]]
     return expenses
 
 
@@ -73,17 +89,19 @@ def export_expenses_csv(expenses: List[Expense], filename):
     with open(filename, 'w', newline='', encoding='utf-8') as file:
         csv_writer = csv.writer(file)
         csv_writer.writerow(
-            ['Date', 'Description', 'Amount', 'Category', 'Comment'])
+            ['Datum', 'Beschreibung', 'Betrag', 'Kategorie', 'Kommentar'])
         for expense in expenses:
-            csv_writer.writerow([f'{ expense.year }-{ str(expense.month).zfill(2) }-{ str(expense.day).zfill(2) }',
-                                expense.description, f'{ expense.amount }{ currency_symbol }', expense.category, expense.comment])
+            csv_writer.writerow([f'{ str(expense.day).zfill(2) }.{ str(expense.month).zfill(2) }.{ expense.year }',
+                                expense.description, f'{ locale.format("%.2f", expense.amount) }{ currency_symbol }', expense.category, expense.comment])
 
 
 def calculate_and_format_increase(old_value: float, new_value: float) -> str:
     difference = new_value - old_value
     percentage = ((new_value / old_value) - 1) * 100
-    increase = '{:+.2f}% ({:.2f} {})'.format(percentage,
-                                             abs(difference), currency_symbol)
+    increase = '{}% ({} {})'.format(locale.format('%.2f', percentage),
+                                             locale.format('%.2f', abs(difference)), currency_symbol)
+    if difference > 0:
+        increase = '+' + increase
     return increase
 
 
@@ -93,13 +111,13 @@ def export_report_html(report: Report, filename):
         template = file.read()
     category_data = [[key, report.categories[key].sum]
                      for key in report.categories]
-    categories_html = pd.read_csv(Path(filename).parent / 'report.csv').replace(np.nan, '', regex=True).to_html(index=False)
-    expenses_html = pd.read_csv(Path(filename).parent / 'data.csv').replace(np.nan, '', regex=True).to_html(index=False)
+    categories_html = pd.read_csv(Path(filename).parent / 'bericht.csv').replace(np.nan, '', regex=True).to_html(index=False)
+    expenses_html = pd.read_csv(Path(filename).parent / 'daten.csv').replace(np.nan, '', regex=True).to_html(index=False)
     with open(filename, 'w', encoding='utf-8') as file:
         file.write(
             template
                 .replace('//replace_with_category_data', str(category_data)[1:-1])
-                .replace('<!--replace_with_title-->', f'Expenses {report.title}')
+                .replace('<!--replace_with_title-->', f'Ausgaben {report.title}')
                 .replace('<!--replace_with_categories-->', categories_html)
                 .replace('<!--replace_with_expenses-->', expenses_html)
         )
@@ -113,15 +131,15 @@ def export_report_csv(report: Report, filename):
     rows_and_sum = []
     for category_name in report.categories.keys():
         category = report.categories[category_name]
-        row = [category_name, category.expenses_count, '{:.2f}{} ({:.2f}%)'.format(
-            category.sum, currency_symbol, 100 * category.sum / report.sum), category.increase]
+        row = [category_name, category.expenses_count, '{}{} ({}%)'.format(
+            locale.format('%.2f', category.sum), currency_symbol, locale.format('%.2f', 100 * category.sum / report.sum)), category.increase]
         rows_and_sum.append((row, category.sum))
     rows_and_sum.sort(key=lambda rs: rs[1] * -1)
     with open(filename, 'w', newline='', encoding='utf-8') as file:
         csv_writer = csv.writer(file)
-        csv_writer.writerow(['Category', 'Expenses count', 'Sum', 'Increase'])
+        csv_writer.writerow(['Kategorie', 'Anzahl an Ausgaben', 'Summe', 'Anstieg'])
         csv_writer.writerow(
-            ['balance', reduce(lambda a, b: a+b, [c.expenses_count for c in report.categories.values()]), '{:.2f}{}'.format(report.sum, currency_symbol), increase])
+            ['gesamt', reduce(lambda a, b: a+b, [c.expenses_count for c in report.categories.values()]), locale.format("%.2f", report.sum) + currency_symbol, increase])
         for row, _ in rows_and_sum:
             csv_writer.writerow(row)
 
@@ -141,7 +159,7 @@ def generate_report(title: str, expenses: List[Expense], previous_interval: Repo
     category_names = set([expense.category.lower() for expense in expenses])
     for category_name in category_names:
         category_expenses = [
-            expense for expense in expenses if expense.category == category_name]
+            expense for expense in expenses if expense.category.lower() == category_name]
         expenses_count = len(category_expenses)
         expenses_sum = reduce(lambda a, b: a+b,
                               [0] + [expense.amount for expense in category_expenses])
@@ -162,7 +180,7 @@ def create_index_html(groups: Mapping[str, List[Expense]]):
             integrity="sha384-Uu6IeWbM+gzNVXJcM9XV3SohHtmWE+3VGi496jvgX1jyvDTXfdK+rfZc8C1Aehk5" crossorigin="anonymous">
     </head>
     <body style="padding: 10px">
-        <h1>Expenses Report</h1>
+        <h1>Berichte &uuml;ber Ausgaben</h1>
         <ul><!--replace_with_li-->
         </ul>
     </body>
@@ -171,24 +189,24 @@ def create_index_html(groups: Mapping[str, List[Expense]]):
         file.write(html)
 
 
-print('Downloading expenses...', end='')
+print('Lade Ausgaben herunter...', end='')
 sys.stdout.flush()
 expenses = download_expenses()
-print('Done')
-print('Sorting expenses...', end='')
+print('Fertig')
+print('Sortiere Ausgaben...', end='')
 sys.stdout.flush()
 sort_expenses(expenses)
-print('Done')
-print('Exporting downloaded expenses...', end='')
+print('Fertig')
+print('Exportiere heruntergeladene Ausgaben...', end='')
 sys.stdout.flush()
-Path(output_folder).mkdir(exist_ok=True)
-export_expenses_csv(expenses, output_folder / 'data.csv')
-print('Done')
-print('Grouping expenses by month...', end='')
+Path(output_folder).mkdir(exist_ok=True, parents=True)
+export_expenses_csv(expenses, output_folder / 'ausgaben.csv')
+print('Fertig')
+print('Gruppiere Ausgaben nach Monat...', end='')
 sys.stdout.flush()
 groups = group_expenses_by_months(expenses)
-print('Done')
-print('Generating reports:')
+print('Fertig')
+print('Generiere Berichte:')
 previous_interval = None
 for key in groups.keys():
     print(f' - {key}...', end='')
@@ -196,15 +214,18 @@ for key in groups.keys():
     report_expenses = groups[key]
     report_output_folder = output_folder / key
     report_output_folder.mkdir(exist_ok=True)
-    export_expenses_csv(report_expenses, report_output_folder / 'data.csv')
+    export_expenses_csv(report_expenses, report_output_folder / f'daten.csv')
     report = generate_report(key, report_expenses, previous_interval)
-    export_report_csv(report, report_output_folder / 'report.csv')
+    export_report_csv(report, report_output_folder / 'bericht.csv')
     export_report_html(report, report_output_folder / 'index.html')
     previous_interval = report
-    print('Done')
-print('Generating index...', end='')
+    print('Fertig')
+print('Generiere Index...', end='')
 sys.stdout.flush()
 create_index_html(groups)
-print('Done')
+print('Fertig')
 
-print('\nDone!')
+print('\nFertig!')
+
+# Open report in browser
+os.system(f'start { (output_folder / "index.html").absolute() }')
