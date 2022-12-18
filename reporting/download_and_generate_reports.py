@@ -112,6 +112,17 @@ def export_report_html(report: Report, filename):
     category_data = [[key, report.categories[key].sum]
                      for key in report.categories]
     categories_html = pd.read_csv(Path(filename).parent / 'bericht.csv').replace(np.nan, '', regex=True).to_html(index=False)
+    def create_grouped_expenses_html(filename):
+        df = pd.read_csv(Path(filename).parent / 'daten.csv').replace(np.nan, '', regex=True)
+        # group by category
+        expenses_category = df.groupby('Kategorie')
+        html = ''
+        for category, expenses in expenses_category:
+            html += f'<h3>{ category }</h3>'
+            expenses = expenses.drop('Kategorie', axis=1)
+            html += expenses.to_html(index=False)
+        return html
+    grouped_expenses_html = create_grouped_expenses_html(Path(filename).parent / 'daten.csv')
     expenses_html = pd.read_csv(Path(filename).parent / 'daten.csv').replace(np.nan, '', regex=True).to_html(index=False)
     with open(filename, 'w', encoding='utf-8') as file:
         file.write(
@@ -119,6 +130,7 @@ def export_report_html(report: Report, filename):
                 .replace('//replace_with_category_data', str(category_data)[1:-1])
                 .replace('<!--replace_with_title-->', f'Ausgaben {report.title}')
                 .replace('<!--replace_with_categories-->', categories_html)
+                .replace('<!--replace_with_grouped_expenses-->', grouped_expenses_html)
                 .replace('<!--replace_with_expenses-->', expenses_html)
         )
 
